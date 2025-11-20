@@ -167,6 +167,8 @@ async function downloadSigned() {
   display: flex;
   gap: 1.5rem;
   align-items: flex-start;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .panel {
@@ -177,12 +179,11 @@ async function downloadSigned() {
 }
 
 .left {
-  flex: 0 0 420px;
+  flex: 0 0 360px; /* slightly narrower to give more space to preview */
 }
 
 .right {
   flex: 1 1 auto;
-  max-height: calc(100vh - 140px);
   display: flex;
   flex-direction: column;
 }
@@ -226,9 +227,10 @@ async function downloadSigned() {
   color: #e5e7eb;
 }
 
+/* Bigger viewer */
 .pdf-preview {
   margin-top: 0.75rem;
-  flex: 1 1 auto;
+  height: 72vh; /* big, scrollable viewport */
   border-radius: 0.75rem;
   overflow: hidden;
   border: 1px solid #1f2937;
