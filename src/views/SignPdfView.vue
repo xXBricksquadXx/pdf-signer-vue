@@ -315,11 +315,28 @@ async function downloadSigned() {
 
 function onPreviewClick(event) {
   const rect = event.currentTarget.getBoundingClientRect()
-  const relX = (event.clientX - rect.left) / rect.width // 0..1 left→right
-  const relY = (event.clientY - rect.top) / rect.height // 0..1 top→bottom
 
-  xOffset.value = Math.round(relX * 100)
-  yOffset.value = Math.round((1 - relY) * 100) // bottom→top
+  // Raw 0..1 coords over the whole iframe area
+  let rawX = (event.clientX - rect.left) / rect.width
+  let rawY = (event.clientY - rect.top) / rect.height
+
+  // Heuristic crop to ignore viewer chrome & margins.
+  // These fractions can be nudged if needed but should get much closer.
+  const toolbarFrac = 0.12 // ~12% top reserved for toolbar
+  const sideFrac = 0.06 // ~6% on left/right for gray margins
+
+  // Remove side margins
+  let xNorm = (rawX - sideFrac) / (1 - 2 * sideFrac)
+  // Remove top toolbar
+  let yNorm = (rawY - toolbarFrac) / (1 - toolbarFrac)
+
+  // Clamp to [0,1] in case user clicks in the chrome/margins
+  xNorm = Math.min(Math.max(xNorm, 0), 1)
+  yNorm = Math.min(Math.max(yNorm, 0), 1)
+
+  // Map into our offsets
+  xOffset.value = Math.round(xNorm * 100)
+  yOffset.value = Math.round((1 - yNorm) * 100) // bottom → top
 
   isPlacing.value = false
   updatePreview()
