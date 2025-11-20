@@ -50,7 +50,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { PDFDocument } from 'pdf-lib'
 import SignaturePad from '../components/SignaturePad.vue'
 
@@ -62,34 +62,47 @@ const targetPage = ref(1)
 const status = ref('')
 const sigRef = ref(null)
 
+onUnmounted(() => {
+  if (pdfUrl.value) {
+    URL.revokeObjectURL(pdfUrl.value)
+  }
+})
+
 async function onPdfSelected(event) {
-  const file = event.target.files[0]
+  const input = event.target
+  const file = input.files[0]
+
   if (!file) {
-    if (pdfUrl.value) URL.revokeObjectURL(pdfUrl.value)
+    // reset state if user cancels the dialog
     pdfBytes.value = null
     pdfName.value = ''
-    pdfUrl.value = null
     pageCount.value = 0
     targetPage.value = 1
     status.value = 'No PDF selected.'
     return
   }
 
+  // cleanup previous preview URL, if any
+  if (pdfUrl.value) {
+    URL.revokeObjectURL(pdfUrl.value)
+  }
+
   const buf = await file.arrayBuffer()
   pdfBytes.value = buf
   pdfName.value = file.name
 
-  // preview URL
-  if (pdfUrl.value) URL.revokeObjectURL(pdfUrl.value)
+  // new preview URL
   pdfUrl.value = URL.createObjectURL(file)
 
-  // page count (for UI)
+  // page count
   const pdfDoc = await PDFDocument.load(buf)
-  // getPageCount() exists in newer pdf-lib, fallback to pages.length
   pageCount.value = pdfDoc.getPageCount ? pdfDoc.getPageCount() : pdfDoc.getPages().length
 
   targetPage.value = 1
   status.value = `Loaded PDF: ${file.name}`
+
+  // allow selecting the same file again later
+  input.value = ''
 }
 
 function dataURLToUint8Array(dataURL) {
