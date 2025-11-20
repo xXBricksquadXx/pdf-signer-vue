@@ -31,7 +31,10 @@
           :max="pageCount || 1"
           class="page-input"
         />
-        <p class="hint">This page will be stamped and shown in the preview.</p>
+        <p class="hint">
+          This page will be stamped and shown in the preview. Match it to the page number in the PDF
+          toolbar above.
+        </p>
       </div>
 
       <div class="block">
@@ -53,6 +56,10 @@
 
         <button type="button" class="secondary secondary-small" @click="startPlacement">
           Click on preview to place
+        </button>
+
+        <button type="button" class="secondary secondary-small" @click="resetOffsets">
+          Reset offsets
         </button>
 
         <p class="hint">Preview uses the same math as download, so positions will match.</p>
@@ -80,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted, onMounted } from 'vue'
+import { ref, computed, onUnmounted, onMounted, watch } from 'vue'
 import { PDFDocument } from 'pdf-lib'
 import SignaturePad from '../components/SignaturePad.vue'
 
@@ -118,6 +125,15 @@ onMounted(() => {
     if (sigRef.value && typeof sigRef.value.loadFromDataUrl === 'function') {
       sigRef.value.loadFromDataUrl(saved)
     }
+  }
+})
+
+// clamp targetPage into [1, pageCount]
+watch(targetPage, (val) => {
+  if (!pageCount.value) return
+  const clamped = Math.min(Math.max(val || 1, 1), pageCount.value)
+  if (clamped !== val) {
+    targetPage.value = clamped
   }
 })
 
@@ -187,6 +203,12 @@ function startPlacement() {
   if (!effectiveUrl.value) return
   isPlacing.value = true
   status.value = 'Click on the preview to place your signature.'
+}
+
+function resetOffsets() {
+  xOffset.value = 80
+  yOffset.value = 10
+  status.value = 'Offsets reset to defaults.'
 }
 
 // Build a preview PDF with the signature stamped
@@ -321,7 +343,6 @@ function onPreviewClick(event) {
   let rawY = (event.clientY - rect.top) / rect.height
 
   // Heuristic crop to ignore viewer chrome & margins.
-  // These fractions can be nudged if needed but should get much closer.
   const toolbarFrac = 0.12 // ~12% top reserved for toolbar
   const sideFrac = 0.06 // ~6% on left/right for gray margins
 
