@@ -88,6 +88,18 @@ function isEmpty() {
   return true
 }
 
+// new: load from saved data URL
+function loadFromDataUrl(dataUrl) {
+  if (!dataUrl || !canvasEl.value || !ctx) return
+  const img = new Image()
+  img.onload = () => {
+    const canvas = canvasEl.value
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+  }
+  img.src = dataUrl
+}
+
 onMounted(() => {
   if (canvasEl.value) {
     ctx = canvasEl.value.getContext('2d')
@@ -99,6 +111,7 @@ defineExpose({
   getPngDataUrl,
   clear,
   isEmpty,
+  loadFromDataUrl,
 })
 </script>
 

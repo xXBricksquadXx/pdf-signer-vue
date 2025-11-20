@@ -51,6 +51,10 @@
 
         <button type="button" class="secondary" @click="updatePreview">Update preview</button>
 
+        <button type="button" class="secondary secondary-small" @click="startPlacement">
+          Click on preview to place
+        </button>
+
         <p class="hint">Preview uses the same math as download, so positions will match.</p>
       </div>
 
@@ -66,6 +70,7 @@
       <h3>Preview</h3>
 
       <div v-if="effectiveUrl" class="pdf-preview">
+        <div v-if="isPlacing" class="pdf-click-layer" @click="onPreviewClick"></div>
         <iframe :src="effectiveUrl" title="PDF preview" class="pdf-frame"></iframe>
       </div>
 
@@ -75,7 +80,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, onMounted } from 'vue'
 import { PDFDocument } from 'pdf-lib'
 import SignaturePad from '../components/SignaturePad.vue'
 
@@ -92,11 +97,28 @@ const sigRef = ref(null)
 const xOffset = ref(80) // left → right
 const yOffset = ref(10) // bottom → top
 
+// placement mode for click-layer
+const isPlacing = ref(false)
+
+// cached signature data URL (for reuse + restore)
+const sigDataUrlRef = ref(null)
+
 const effectiveUrl = computed(() => previewUrl.value || originalUrl.value)
 
 onUnmounted(() => {
   if (originalUrl.value) URL.revokeObjectURL(originalUrl.value)
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+})
+
+onMounted(() => {
+  const saved = localStorage.getItem('pdf-signer:lastSig')
+  if (saved) {
+    sigDataUrlRef.value = saved
+    // when child is ready, try to load saved signature into pad
+    if (sigRef.value && typeof sigRef.value.loadFromDataUrl === 'function') {
+      sigRef.value.loadFromDataUrl(saved)
+    }
+  }
 })
 
 async function onPdfSelected(event) {
@@ -152,6 +174,21 @@ function dataURLToUint8Array(dataURL) {
   return bytes
 }
 
+function cacheSignature() {
+  if (!sigRef.value) return null
+  const url = sigRef.value.getPngDataUrl()
+  if (!url) return null
+  sigDataUrlRef.value = url
+  localStorage.setItem('pdf-signer:lastSig', url)
+  return url
+}
+
+function startPlacement() {
+  if (!effectiveUrl.value) return
+  isPlacing.value = true
+  status.value = 'Click on the preview to place your signature.'
+}
+
 // Build a preview PDF with the signature stamped
 async function updatePreview() {
   if (!pdfBytes.value) {
@@ -163,10 +200,15 @@ async function updatePreview() {
     return
   }
 
+  const sigDataUrl = cacheSignature()
+  if (!sigDataUrl) {
+    status.value = 'Could not read signature.'
+    return
+  }
+
   status.value = 'Updating preview...'
 
   try {
-    const sigDataUrl = sigRef.value.getPngDataUrl()
     const sigBytes = dataURLToUint8Array(sigDataUrl)
 
     const pdfDoc = await PDFDocument.load(pdfBytes.value)
@@ -217,10 +259,15 @@ async function downloadSigned() {
     return
   }
 
+  const sigDataUrl = cacheSignature()
+  if (!sigDataUrl) {
+    status.value = 'Could not read signature.'
+    return
+  }
+
   status.value = 'Stamping signature...'
 
   try {
-    const sigDataUrl = sigRef.value.getPngDataUrl()
     const sigBytes = dataURLToUint8Array(sigDataUrl)
 
     const pdfDoc = await PDFDocument.load(pdfBytes.value)
@@ -264,6 +311,18 @@ async function downloadSigned() {
     console.error(err)
     status.value = 'Error while signing PDF (check console).'
   }
+}
+
+function onPreviewClick(event) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  const relX = (event.clientX - rect.left) / rect.width // 0..1 left→right
+  const relY = (event.clientY - rect.top) / rect.height // 0..1 top→bottom
+
+  xOffset.value = Math.round(relX * 100)
+  yOffset.value = Math.round((1 - relY) * 100) // bottom→top
+
+  isPlacing.value = false
+  updatePreview()
 }
 </script>
 
@@ -379,5 +438,18 @@ async function downloadSigned() {
   width: 100%;
   height: 100%;
   border: none;
+}
+
+.pdf-click-layer {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  background: transparent;
+}
+
+.secondary-small {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.8rem;
 }
 </style>
