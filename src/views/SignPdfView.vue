@@ -7,7 +7,7 @@
       <div class="block">
         <label class="label">1. Upload PDF</label>
         <input type="file" accept="application/pdf" @change="onPdfSelected" />
-        <p class="hint">MVP: signature is stamped bottom-right on the selected page.</p>
+        <p class="hint">Use the preview on the right to see the page, then adjust offsets.</p>
         <p v-if="pdfName" class="hint">
           Loaded: {{ pdfName }} ({{ pageCount }} page<span v-if="pageCount !== 1">s</span>)
         </p>
@@ -28,11 +28,29 @@
           :max="pageCount || 1"
           class="page-input"
         />
-        <p class="hint">Scroll the preview on the right, then choose the page to stamp.</p>
+        <p class="hint">Set which page to stamp (preview shows the whole document).</p>
       </div>
 
       <div class="block">
-        <label class="label">4. Stamp & Download</label>
+        <label class="label">4. Position (offsets)</label>
+
+        <div class="offset-control">
+          <span class="offset-label">X offset (left → right)</span>
+          <input type="range" min="0" max="100" v-model.number="xOffset" />
+          <span class="offset-value">{{ xOffset }}%</span>
+        </div>
+
+        <div class="offset-control">
+          <span class="offset-label">Y offset (bottom → top)</span>
+          <input type="range" min="0" max="100" v-model.number="yOffset" />
+          <span class="offset-value">{{ yOffset }}%</span>
+        </div>
+
+        <p class="hint">Adjust until the signature lands on the line you want.</p>
+      </div>
+
+      <div class="block">
+        <label class="label">5. Stamp & Download</label>
         <button type="button" class="primary" @click="downloadSigned">Download signed PDF</button>
         <p class="hint">{{ status }}</p>
       </div>
@@ -41,9 +59,11 @@
     <!-- RIGHT: preview -->
     <div class="panel right">
       <h3>Preview</h3>
+
       <div v-if="pdfUrl" class="pdf-preview">
         <iframe :src="pdfUrl" title="PDF preview" class="pdf-frame"></iframe>
       </div>
+
       <p v-else class="hint">Upload a PDF on the left to see it here.</p>
     </div>
   </section>
@@ -62,10 +82,12 @@ const targetPage = ref(1)
 const status = ref('')
 const sigRef = ref(null)
 
+// offsets in percent (0–100)
+const xOffset = ref(80) // start near bottom-right
+const yOffset = ref(10)
+
 onUnmounted(() => {
-  if (pdfUrl.value) {
-    URL.revokeObjectURL(pdfUrl.value)
-  }
+  if (pdfUrl.value) URL.revokeObjectURL(pdfUrl.value)
 })
 
 async function onPdfSelected(event) {
@@ -73,33 +95,30 @@ async function onPdfSelected(event) {
   const file = input.files[0]
 
   if (!file) {
-    // reset state if user cancels the dialog
+    if (pdfUrl.value) URL.revokeObjectURL(pdfUrl.value)
     pdfBytes.value = null
     pdfName.value = ''
+    pdfUrl.value = null
     pageCount.value = 0
     targetPage.value = 1
     status.value = 'No PDF selected.'
     return
   }
 
-  // cleanup previous preview URL, if any
-  if (pdfUrl.value) {
-    URL.revokeObjectURL(pdfUrl.value)
-  }
-
   const buf = await file.arrayBuffer()
   pdfBytes.value = buf
   pdfName.value = file.name
+  status.value = `Loaded PDF: ${file.name}`
 
-  // new preview URL
+  // preview URL
+  if (pdfUrl.value) URL.revokeObjectURL(pdfUrl.value)
   pdfUrl.value = URL.createObjectURL(file)
 
-  // page count
+  // page count via pdf-lib
   const pdfDoc = await PDFDocument.load(buf)
   pageCount.value = pdfDoc.getPageCount ? pdfDoc.getPageCount() : pdfDoc.getPages().length
 
   targetPage.value = 1
-  status.value = `Loaded PDF: ${file.name}`
 
   // allow selecting the same file again later
   input.value = ''
@@ -136,18 +155,20 @@ async function downloadSigned() {
     const pdfDoc = await PDFDocument.load(pdfBytes.value)
     const pages = pdfDoc.getPages()
 
-    // clamp page index
     const idx = Math.min(Math.max((targetPage.value || 1) - 1, 0), pages.length - 1)
-
     const page = pages[idx]
 
     const sigImage = await pdfDoc.embedPng(sigBytes)
-    const sigDims = sigImage.scale(0.5) // adjust scaling here
+    const sigDims = sigImage.scale(0.5) // adjust size if needed
 
-    const { width } = page.getSize()
-    const margin = 36
-    const x = width - sigDims.width - margin
-    const y = margin
+    const { width, height } = page.getSize()
+
+    // offsets 0–100 → coordinates; ensure sig stays fully on page
+    const xMax = width - sigDims.width
+    const yMax = height - sigDims.height
+
+    const x = (xOffset.value / 100) * xMax
+    const y = (yOffset.value / 100) * yMax
 
     page.drawImage(sigImage, {
       x,
@@ -159,6 +180,7 @@ async function downloadSigned() {
     const signedBytes = await pdfDoc.save()
     const blob = new Blob([signedBytes], { type: 'application/pdf' })
     const url = URL.createObjectURL(blob)
+
     const a = document.createElement('a')
     a.href = url
     a.download = pdfName.value ? pdfName.value.replace(/\.pdf$/i, '') + '_signed.pdf' : 'signed.pdf'
@@ -192,7 +214,7 @@ async function downloadSigned() {
 }
 
 .left {
-  flex: 0 0 360px; /* slightly narrower to give more space to preview */
+  flex: 0 0 360px;
 }
 
 .right {
@@ -240,13 +262,41 @@ async function downloadSigned() {
   color: #e5e7eb;
 }
 
-/* Bigger viewer */
+/* offset controls */
+.offset-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.offset-label {
+  flex: 0 0 150px;
+  font-size: 0.8rem;
+  color: #e5e7eb;
+}
+
+.offset-control input[type='range'] {
+  flex: 1 1 auto;
+}
+
+.offset-value {
+  width: 3rem;
+  text-align: right;
+  font-size: 0.8rem;
+  color: #e5e7eb;
+}
+
+/* preview */
+
 .pdf-preview {
+  position: relative;
   margin-top: 0.75rem;
-  height: 72vh; /* big, scrollable viewport */
+  height: 72vh;
   border-radius: 0.75rem;
   overflow: hidden;
   border: 1px solid #1f2937;
+  background: #020617;
 }
 
 .pdf-frame {
